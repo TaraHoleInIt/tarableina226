@@ -222,7 +222,7 @@ ina_value INA226_GetShuntVoltage( struct INA226_Device* Device ) {
     Result = ( ina_value ) ( ( int16_t ) INA226_ReadReg16( Device, INA226_Reg_ShuntVoltage ) );
     Result = Result * Device->ShuntVoltage_LSB;
 
-#if defined INA226_USE_FP
+#if defined CONFIG_INA226_USE_FP
     return Result;
 #else
     return Result / 10;
@@ -236,7 +236,7 @@ ina_value INA226_GetBusVoltage( struct INA226_Device* Device ) {
     Data = ( ina_value ) INA226_ReadReg16( Device, INA226_Reg_BusVolage );
     Data = Data * Device->BusVoltage_LSB;
 
-#if defined INA226_USE_FP
+#if defined CONFIG_INA226_USE_FP
     return Data;
 #else
     /* Scale the data back down to millivolts */
@@ -268,7 +268,7 @@ void INA226_Reset( struct INA226_Device* Device ) {
     INA226_WriteConfig( Device, INA226_ReadConfig( Device ) | INA226_CFG_Reset );
 }
 
-#if defined INA226_USE_FP
+#ifdef CONFIG_INA226_USE_FP
 static void INA226_Calibrate_FP( struct INA226_Device* Device, int RShuntInMilliOhms, int MaxCurrentInAmps ) {
     float RShunt = ( ( float ) RShuntInMilliOhms ) / 1000.0f;
     float Current_LSB = 0.0f;
@@ -344,7 +344,7 @@ static void INA226_Calibrate_INT( struct INA226_Device* Device, int RShuntInMill
 void INA226_Calibrate( struct INA226_Device* Device, int RShuntInMilliOhms, int MaxCurrentInAmps ) {
     NullCheck( Device, return );
 
-#if defined INA226_USE_FP
+#ifdef CONFIG_INA226_USE_FP
     INA226_Calibrate_FP( Device, RShuntInMilliOhms, MaxCurrentInAmps );
 #else
     INA226_Calibrate_INT( Device, RShuntInMilliOhms, MaxCurrentInAmps );
@@ -352,17 +352,24 @@ void INA226_Calibrate( struct INA226_Device* Device, int RShuntInMilliOhms, int 
 }
 
 bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMilliOhms, int MaxCurrentInAmps ) {
-    NullCheck( Device, return false );
+    const uint16_t ConfigRegisterAfterReset = 0x4127;
 
+    NullCheck( Device, return false );
+    
     memset( Device, 0, sizeof( struct INA226_Device ) );
 
     if ( I2CAddress > 0 ) {
         Device->Address = I2CAddress;
 
-        INA226_Reset( Device );
-        INA226_Calibrate( Device, RShuntInMilliOhms, MaxCurrentInAmps );
+        /* Check to see if we can actually talk to the device, if we can then the initial
+         * value for the config register should be 0x4127 after a reset.
+         */
+        if ( INA226_ReadConfig( Device ) == ConfigRegisterAfterReset ) {
+            INA226_Reset( Device );
+            INA226_Calibrate( Device, RShuntInMilliOhms, MaxCurrentInAmps );
 
-        return true;
+            return true;
+        }
     }
 
     return false;

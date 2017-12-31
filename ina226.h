@@ -9,9 +9,7 @@ extern "C" {
 #define BIT( n ) ( 1 << n )
 #endif
 
-#define INA226_USE_FP
-
-#if defined INA226_USE_FP
+#if defined CONFIG_INA226_USE_FP
 typedef float ina_value;
 #else
 typedef int32_t ina_value;

@@ -1,0 +1,15 @@
+{
+    "files.associations": {
+        "esp_timer_impl.h": "c",
+        "esp_timer.h": "c",
+        "i2c.h": "c",
+        "stdbool.h": "c",
+        "sdmmc_host.h": "c",
+        "stdio.h": "c",
+        "string.h": "c",
+        "font.h": "c",
+        "stdint.h": "c"
+    },
+    "licenser.author": "Tara Keeling",
+    "licenser.license": "MIT"
+}

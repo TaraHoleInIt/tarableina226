@@ -1,0 +1,20 @@
+{
+    "configurations": [
+        {
+            "name": "esp-idf",
+            "browse": {
+                "path": [
+                    "/Users/tara/Documents/espdev/xtensa-esp32-elf/xtensa-esp32-elf/include",
+                    "/Users/tara/Documents/espdev/esp-idf",
+                    "/Users/tara/Documents/espdev/esp-idf/components",
+                    "/Users/tara/Documents/espdev/esp-idf/components/driver",
+                    "${workspaceRoot}",
+                    "${workspaceRoot}/components/tarablessd1306/include",
+                    "${workspaceRoot}/components/tarableina226/include"
+                ]
+            },
+            "intelliSenseMode": "clang-x64"
+        }
+    ],
+    "version": 3
+}

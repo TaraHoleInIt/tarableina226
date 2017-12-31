@@ -1,0 +1,7 @@
+menu "TarableINA226"
+
+config INA226_USE_FP
+    default y
+    bool "Use floating point for calculations"
+
+endmenu
