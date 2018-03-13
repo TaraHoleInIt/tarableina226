@@ -5,6 +5,10 @@
 extern "C" {
 #endif
 
+#if defined HAVE_CONFIG_H
+#include "sdkconfig.h"
+#endif
+
 #if ! defined BIT
 #define BIT( n ) ( 1 << n )
 #endif
