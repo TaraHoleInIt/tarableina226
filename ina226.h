@@ -78,6 +78,20 @@ typedef enum {
     INA226_Num_Modes = 7
 } INA226_Mode;
 
+typedef enum {
+    INA226_Alert_ShuntOverVoltage = BIT( 15 ),
+    INA226_Alert_ShuntUnderVoltage = BIT( 14 ),
+    INA226_Alert_BusOverVoltage = BIT( 13 ),
+    INA226_Alert_BusUnderVoltage = BIT( 12 ),
+    INA226_Alert_PowerOverLimit = BIT( 11 ),
+    INA226_Alert_ConversionReady = BIT( 10 ),
+    INA226_Alert_AlertFunctionFlag = BIT( 4 ),
+    INA226_Alert_ConversionReadyFlag = BIT( 3 ),
+    INA226_Alert_MathOverflowFlag = BIT( 2 ),
+    INA226_Alert_AlertPolarity = BIT( 1 ),
+    INA226_Alert_AlertLatchEnable = BIT( 0 )
+} INA226_Alert;
+
 #define INA226_CFG_Reset BIT( 15 )
 
 #define INA226_CFG_AveragingMask ( BIT( 9 ) | BIT( 10 ) | BIT( 11 ) )
@@ -120,6 +134,8 @@ ina_value INA226_GetPower( struct INA226_Device* Device );
 bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMilliOhms, int MaxCurrentInAmps );
 void INA226_Reset( struct INA226_Device* Device );
 void INA226_Calibrate( struct INA226_Device* Device, int RShunt, int MaxCurrentInMilliamps );
+
+ina_value INA226_SetAlertLimit_BusVoltage( struct INA226_Device* Device, ina_value BusVoltageInMV );
 
 #ifdef __cplusplus
 }

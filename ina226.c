@@ -376,3 +376,23 @@ bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMill
 
     return false;
 }
+
+static uint16_t INA226_SetAlertLimit( struct INA226_Device* Device, ina_value Value ) {
+    uint16_t Old = INA226_ReadReg16( Device, INA226_Reg_AlertLimit );
+
+    NullCheck( Device, return 0 );
+    INA226_WriteReg( Device, INA226_Reg_AlertLimit, Value );
+
+    return Old;
+}
+
+ina_value INA226_SetAlertLimit_BusVoltage( struct INA226_Device* Device, ina_value BusVoltageInMV ) {
+    ina_value OldLimit = ( ina_value ) 0;
+
+    NullCheck( Device, return ( ina_value ) 0 );
+
+    OldLimit = ( ina_value ) INA226_SetAlertLimit( Device, BusVoltageInMV * Device->BusVoltage_LSB );
+    OldLimit/= Device->BusVoltage_LSB;
+
+    return OldLimit;
+}
