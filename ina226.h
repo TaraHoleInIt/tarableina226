@@ -19,12 +19,18 @@ typedef float ina_value;
 typedef int32_t ina_value;
 #endif
 
+typedef size_t ( *INAWriteBytes ) ( int Address, const uint8_t* Buffer, size_t BytesToWrite );
+typedef size_t ( *INAReadBytes ) ( int Address, uint8_t* Buffer, size_t BufferMaxLen );
+
 struct INA226_Device {
     ina_value ShuntVoltage_LSB;
     ina_value BusVoltage_LSB;
 
     ina_value CalibrationValue;
     ina_value Current_LSB;
+
+    INAWriteBytes WriteBytesFn;
+    INAReadBytes ReadBytesFn;
 
     int Address;
 };
@@ -131,7 +137,7 @@ ina_value INA226_GetBusVoltage( struct INA226_Device* Device );
 ina_value INA226_GetCurrent( struct INA226_Device* Device );
 ina_value INA226_GetPower( struct INA226_Device* Device );
 
-bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMilliOhms, int MaxCurrentInAmps );
+bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMilliOhms, int MaxCurrentInAmps, INAWriteBytes WriteBytesFn, INAReadBytes ReadBytesFn );
 void INA226_Reset( struct INA226_Device* Device );
 void INA226_Calibrate( struct INA226_Device* Device, int RShunt, int MaxCurrentInMilliamps );
 

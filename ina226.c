@@ -28,74 +28,36 @@
     } \
 }
 
-static const int USE_THIS_I2C_PORT = 1;
-
 static bool INA226_SetRegisterPointer( struct INA226_Device* Device, INA226_Reg Register ) {
-    i2c_cmd_handle_t CommandHandle = NULL;
-
-    RangeCheck( Register, INA226_Reg_Cfg, INA226_Reg_DieId, return false );
     NullCheck( Device, return false );
+    NullCheck( Device->WriteBytesFn, return false );
 
-    if ( ( CommandHandle = i2c_cmd_link_create( ) ) ) {
-        ESP_ERROR_CHECK( i2c_master_start( CommandHandle ) );
-            ESP_ERROR_CHECK( i2c_master_write_byte( CommandHandle, ( Device->Address << 1 ) | I2C_MASTER_WRITE, true ) );
-            ESP_ERROR_CHECK( i2c_master_write_byte( CommandHandle, ( uint8_t ) Register, true ) );
-        ESP_ERROR_CHECK( i2c_master_stop( CommandHandle ) );
-
-        ESP_ERROR_CHECK( i2c_master_cmd_begin( USE_THIS_I2C_PORT, CommandHandle, pdMS_TO_TICKS( 1000 ) ) );
-        i2c_cmd_link_delete( CommandHandle );
-
-        return true;
-    }
-
-    return false;
+    return ( Device->WriteBytesFn( Device->Address, ( const uint8_t* ) &Register, 1 ) == 1 ) ? true : false;
 }
 
 bool INA226_WriteReg( struct INA226_Device* Device, INA226_Reg Register, uint16_t Value ) {
-    i2c_cmd_handle_t CommandHandle = NULL;
+    uint8_t Command[ ] = {
+        ( uint8_t ) Register,
+        Value >> 8,
+        Value & 0xFF
+    };
 
-    RangeCheck( Register, INA226_Reg_Cfg, INA226_Reg_DieId, return false );
     NullCheck( Device, return false );
-    
-    if ( ( CommandHandle = i2c_cmd_link_create( ) ) ) {
-        ESP_ERROR_CHECK( i2c_master_start( CommandHandle ) );
-            ESP_ERROR_CHECK( i2c_master_write_byte( CommandHandle, ( Device->Address << 1 ) | I2C_MASTER_WRITE, true ) );
-            ESP_ERROR_CHECK( i2c_master_write_byte( CommandHandle, ( uint8_t ) Register, true ) );
-            ESP_ERROR_CHECK( i2c_master_write_byte( CommandHandle, ( uint8_t ) ( Value >> 8 ), true ) );
-            ESP_ERROR_CHECK( i2c_master_write_byte( CommandHandle, ( uint8_t ) Value, true ) );
-        ESP_ERROR_CHECK( i2c_master_stop( CommandHandle ) );
+    NullCheck( Device->WriteBytesFn, return false );
 
-        ESP_ERROR_CHECK( i2c_master_cmd_begin( USE_THIS_I2C_PORT, CommandHandle, pdMS_TO_TICKS( 1000 ) ) );
-        i2c_cmd_link_delete( CommandHandle );
-
-        return true;
-    }
-
-    return false;
+    return ( Device->WriteBytesFn( Device->Address, ( const uint8_t* ) Command, sizeof( Command ) ) == sizeof( Command ) ) ? true : false;
 }
 
 uint16_t INA226_ReadReg16( struct INA226_Device* Device, INA226_Reg Register ) {
-    i2c_cmd_handle_t CommandHandle = NULL;
-    uint8_t Value_lo = 0;
-    uint8_t Value_hi = 0;
+    uint16_t Value = 0;
 
-    RangeCheck( Register, INA226_Reg_Cfg, INA226_Reg_DieId, return false );
-    NullCheck( Device, return 0xBAAD );
+    NullCheck( Device, return 0 );
+    NullCheck( Device->WriteBytesFn, return 0 );
+    NullCheck( Device->ReadBytesFn, return 0 );
 
     if ( INA226_SetRegisterPointer( Device, Register ) == true ) {
-        vTaskDelay( pdMS_TO_TICKS( 1 ) );
-
-        if ( ( CommandHandle = i2c_cmd_link_create( ) ) ) {
-            ESP_ERROR_CHECK( i2c_master_start( CommandHandle ) );
-                ESP_ERROR_CHECK( i2c_master_write_byte( CommandHandle, ( Device->Address << 1 ) | I2C_MASTER_READ, true ) );
-                ESP_ERROR_CHECK( i2c_master_read_byte( CommandHandle, &Value_hi, false ) );
-                ESP_ERROR_CHECK( i2c_master_read_byte( CommandHandle, &Value_lo, false ) );
-            ESP_ERROR_CHECK( i2c_master_stop( CommandHandle ) );
-
-            ESP_ERROR_CHECK( i2c_master_cmd_begin( USE_THIS_I2C_PORT, CommandHandle, pdMS_TO_TICKS( 1000 ) ) );
-            i2c_cmd_link_delete( CommandHandle );
-
-            return ( ( Value_hi << 8 ) | Value_lo );
+        if ( Device->ReadBytesFn( Device->Address, ( uint8_t* ) &Value, sizeof( uint16_t ) ) == sizeof( uint16_t ) ) {
+            return ( Value >> 8 ) | ( Value << 8 );
         }
     }
 
@@ -288,10 +250,6 @@ static void INA226_Calibrate_FP( struct INA226_Device* Device, int RShuntInMilli
     Device->ShuntVoltage_LSB = 2.5f;
     Device->BusVoltage_LSB = 1.25f;
 
-    printf( "Current_LSB: %f\n", Current_LSB );
-    printf( "Cal: %f\n", Cal );
-    printf( "dCal: %d\n", ( uint16_t ) Cal );
-
     INA226_WriteReg( Device, INA226_Reg_Calibration, ( uint16_t ) Cal );
 }
 #else
@@ -338,8 +296,6 @@ static void INA226_Calibrate_INT( struct INA226_Device* Device, int RShuntInMill
     Device->ShuntVoltage_LSB = 25;
 
     INA226_WriteReg( Device, INA226_Reg_Calibration, Device->CalibrationValue );
-
-    printf( "lsb: %d\ncal: %d\n", ( int ) Current_LSB, ( int ) Cal );
 }
 #endif
 
@@ -353,25 +309,32 @@ void INA226_Calibrate( struct INA226_Device* Device, int RShuntInMilliOhms, int 
 #endif    
 }
 
-bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMilliOhms, int MaxCurrentInAmps ) {
+bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMilliOhms, int MaxCurrentInAmps, INAWriteBytes WriteBytesFn, INAReadBytes ReadBytesFn ) {
     const uint16_t ConfigRegisterAfterReset = 0x4127;
 
+    NullCheck( WriteBytesFn, return false );
+    NullCheck( ReadBytesFn, return false );
     NullCheck( Device, return false );
     
     memset( Device, 0, sizeof( struct INA226_Device ) );
 
     if ( I2CAddress > 0 ) {
+        Device->WriteBytesFn = WriteBytesFn;
+        Device->ReadBytesFn = ReadBytesFn;
         Device->Address = I2CAddress;
+
+        INA226_Reset( Device );
 
         /* Check to see if we can actually talk to the device, if we can then the initial
          * value for the config register should be 0x4127 after a reset.
          */
         if ( INA226_ReadConfig( Device ) == ConfigRegisterAfterReset ) {
-            INA226_Reset( Device );
             INA226_Calibrate( Device, RShuntInMilliOhms, MaxCurrentInAmps );
 
             return true;
         }
+
+        printf( "INA226: Failed to reset\n" );
     }
 
     return false;
