@@ -32,72 +32,74 @@ static const int USE_THIS_I2C_PORT = 1;
 
 static bool INA226_SetRegisterPointer( struct INA226_Device* Device, INA226_Reg Register ) {
     i2c_cmd_handle_t CommandHandle = NULL;
-    esp_err_t Result = ESP_FAIL;
 
+    RangeCheck( Register, INA226_Reg_Cfg, INA226_Reg_DieId, return false );
     NullCheck( Device, return false );
 
     if ( ( CommandHandle = i2c_cmd_link_create( ) ) ) {
-        i2c_master_start( CommandHandle );
-            i2c_master_write_byte( CommandHandle, ( Device->Address << 1 ) | I2C_MASTER_WRITE, true );
-            i2c_master_write_byte( CommandHandle, ( uint8_t ) Register, true );
-        i2c_master_stop( CommandHandle );
+        ESP_ERROR_CHECK( i2c_master_start( CommandHandle ) );
+            ESP_ERROR_CHECK( i2c_master_write_byte( CommandHandle, ( Device->Address << 1 ) | I2C_MASTER_WRITE, true ) );
+            ESP_ERROR_CHECK( i2c_master_write_byte( CommandHandle, ( uint8_t ) Register, true ) );
+        ESP_ERROR_CHECK( i2c_master_stop( CommandHandle ) );
 
-        Result = i2c_master_cmd_begin( USE_THIS_I2C_PORT, CommandHandle, pdMS_TO_TICKS( 1000 ) );
+        ESP_ERROR_CHECK( i2c_master_cmd_begin( USE_THIS_I2C_PORT, CommandHandle, pdMS_TO_TICKS( 1000 ) ) );
         i2c_cmd_link_delete( CommandHandle );
+
+        return true;
     }
 
-    return ( Result == ESP_OK ) ? true : false;
+    return false;
 }
 
 bool INA226_WriteReg( struct INA226_Device* Device, INA226_Reg Register, uint16_t Value ) {
     i2c_cmd_handle_t CommandHandle = NULL;
-    esp_err_t Result = ESP_FAIL;
 
+    RangeCheck( Register, INA226_Reg_Cfg, INA226_Reg_DieId, return false );
     NullCheck( Device, return false );
     
     if ( ( CommandHandle = i2c_cmd_link_create( ) ) ) {
-        i2c_master_start( CommandHandle );
-            i2c_master_write_byte( CommandHandle, ( Device->Address << 1 ) | I2C_MASTER_WRITE, true );
-            i2c_master_write_byte( CommandHandle, ( uint8_t ) Register, true );
-            i2c_master_write_byte( CommandHandle, ( uint8_t ) ( Value >> 8 ), true );
-            i2c_master_write_byte( CommandHandle, ( uint8_t ) Value, true );
-        i2c_master_stop( CommandHandle );
+        ESP_ERROR_CHECK( i2c_master_start( CommandHandle ) );
+            ESP_ERROR_CHECK( i2c_master_write_byte( CommandHandle, ( Device->Address << 1 ) | I2C_MASTER_WRITE, true ) );
+            ESP_ERROR_CHECK( i2c_master_write_byte( CommandHandle, ( uint8_t ) Register, true ) );
+            ESP_ERROR_CHECK( i2c_master_write_byte( CommandHandle, ( uint8_t ) ( Value >> 8 ), true ) );
+            ESP_ERROR_CHECK( i2c_master_write_byte( CommandHandle, ( uint8_t ) Value, true ) );
+        ESP_ERROR_CHECK( i2c_master_stop( CommandHandle ) );
 
-        Result = i2c_master_cmd_begin( USE_THIS_I2C_PORT, CommandHandle, pdMS_TO_TICKS( 1000 ) );
+        ESP_ERROR_CHECK( i2c_master_cmd_begin( USE_THIS_I2C_PORT, CommandHandle, pdMS_TO_TICKS( 1000 ) ) );
         i2c_cmd_link_delete( CommandHandle );
+
+        return true;
     }
 
-    return ( Result == ESP_OK ) ? true : false;
+    return false;
 }
 
 uint16_t INA226_ReadReg16( struct INA226_Device* Device, INA226_Reg Register ) {
     i2c_cmd_handle_t CommandHandle = NULL;
-    esp_err_t Result = ESP_FAIL;
     uint8_t Value_lo = 0;
     uint8_t Value_hi = 0;
 
+    RangeCheck( Register, INA226_Reg_Cfg, INA226_Reg_DieId, return false );
     NullCheck( Device, return 0xBAAD );
 
     if ( INA226_SetRegisterPointer( Device, Register ) == true ) {
         vTaskDelay( pdMS_TO_TICKS( 1 ) );
 
         if ( ( CommandHandle = i2c_cmd_link_create( ) ) ) {
-            i2c_master_start( CommandHandle );
-                i2c_master_write_byte( CommandHandle, ( Device->Address << 1 ) | I2C_MASTER_READ, true );
-                i2c_master_read_byte( CommandHandle, &Value_hi, false );
-                i2c_master_read_byte( CommandHandle, &Value_lo, false );
-            i2c_master_stop( CommandHandle );
+            ESP_ERROR_CHECK( i2c_master_start( CommandHandle ) );
+                ESP_ERROR_CHECK( i2c_master_write_byte( CommandHandle, ( Device->Address << 1 ) | I2C_MASTER_READ, true ) );
+                ESP_ERROR_CHECK( i2c_master_read_byte( CommandHandle, &Value_hi, false ) );
+                ESP_ERROR_CHECK( i2c_master_read_byte( CommandHandle, &Value_lo, false ) );
+            ESP_ERROR_CHECK( i2c_master_stop( CommandHandle ) );
 
-            Result = i2c_master_cmd_begin( USE_THIS_I2C_PORT, CommandHandle, pdMS_TO_TICKS( 1000 ) );
+            ESP_ERROR_CHECK( i2c_master_cmd_begin( USE_THIS_I2C_PORT, CommandHandle, pdMS_TO_TICKS( 1000 ) ) );
             i2c_cmd_link_delete( CommandHandle );
 
-            if ( Result == ESP_OK ) {
-                return ( ( Value_hi << 8 ) | Value_lo );
-            }
+            return ( ( Value_hi << 8 ) | Value_lo );
         }
     }
 
-    return 0xBAAD;
+    return 0;
 }
 
 uint16_t INA226_GetManufacturerId( struct INA226_Device* Device ) {
