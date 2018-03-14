@@ -13,21 +13,15 @@ extern "C" {
 #define BIT( n ) ( 1 << n )
 #endif
 
-#if defined CONFIG_INA226_USE_FP
-typedef float ina_value;
-#else
-typedef int32_t ina_value;
-#endif
-
 typedef size_t ( *INAWriteBytes ) ( int Address, const uint8_t* Buffer, size_t BytesToWrite );
 typedef size_t ( *INAReadBytes ) ( int Address, uint8_t* Buffer, size_t BufferMaxLen );
 
 struct INA226_Device {
-    ina_value ShuntVoltage_LSB;
-    ina_value BusVoltage_LSB;
+    float ShuntVoltage_LSB;
+    float BusVoltage_LSB;
 
-    ina_value CalibrationValue;
-    ina_value Current_LSB;
+    float CalibrationValue;
+    float Current_LSB;
 
     INAWriteBytes WriteBytesFn;
     INAReadBytes ReadBytesFn;
@@ -132,16 +126,16 @@ void INA226_SetShuntVoltageConversionTime( struct INA226_Device* Device, INA226_
 INA226_Mode INA226_GetOperatingMode( struct INA226_Device* Device );
 void INA226_SetOperatingMode( struct INA226_Device* Device, INA226_Mode Mode );
 
-ina_value INA226_GetShuntVoltage( struct INA226_Device* Device );
-ina_value INA226_GetBusVoltage( struct INA226_Device* Device );
-ina_value INA226_GetCurrent( struct INA226_Device* Device );
-ina_value INA226_GetPower( struct INA226_Device* Device );
+float INA226_GetShuntVoltage( struct INA226_Device* Device );
+float INA226_GetBusVoltage( struct INA226_Device* Device );
+float INA226_GetCurrent( struct INA226_Device* Device );
+float INA226_GetPower( struct INA226_Device* Device );
 
 bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMilliOhms, int MaxCurrentInAmps, INAWriteBytes WriteBytesFn, INAReadBytes ReadBytesFn );
 void INA226_Reset( struct INA226_Device* Device );
 void INA226_Calibrate( struct INA226_Device* Device, int RShunt, int MaxCurrentInMilliamps );
 
-ina_value INA226_SetAlertLimit_BusVoltage( struct INA226_Device* Device, ina_value BusVoltageInMV );
+float INA226_SetAlertLimit_BusVoltage( struct INA226_Device* Device, float BusVoltageInMV );
 
 #ifdef __cplusplus
 }

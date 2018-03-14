@@ -180,51 +180,42 @@ void INA226_SetOperatingMode( struct INA226_Device* Device, INA226_Mode Mode ) {
 }
 
 /* Returns the shunt voltage in millivolts */
-ina_value INA226_GetShuntVoltage( struct INA226_Device* Device ) {
-    ina_value Result = ( ina_value ) 0;
+float INA226_GetShuntVoltage( struct INA226_Device* Device ) {
+    float Result = 0.0f;
 
-    Result = ( ina_value ) ( ( int16_t ) INA226_ReadReg16( Device, INA226_Reg_ShuntVoltage ) );
+    Result = ( float ) ( ( int16_t ) INA226_ReadReg16( Device, INA226_Reg_ShuntVoltage ) );
     Result = Result * Device->ShuntVoltage_LSB;
 
-#if defined CONFIG_INA226_USE_FP
     return Result;
-#else
-    return Result / 10;
-#endif
 }
 
 /* Returns the voltage (in millivolts) of VBUS */
-ina_value INA226_GetBusVoltage( struct INA226_Device* Device ) {
-    ina_value Data = ( ina_value ) 0;
+float INA226_GetBusVoltage( struct INA226_Device* Device ) {
+    float Data = 0.0f;
 
-    Data = ( ina_value ) INA226_ReadReg16( Device, INA226_Reg_BusVolage );
+    Data = ( float ) INA226_ReadReg16( Device, INA226_Reg_BusVolage );
     Data = Data * Device->BusVoltage_LSB;
 
-#if defined CONFIG_INA226_USE_FP
     return Data;
-#else
-    /* Scale the data back down to millivolts */
-    return Data / 100;
-#endif
 }
 
 /* Returns the current flowing in microamps */
-ina_value INA226_GetCurrent( struct INA226_Device* Device ) {
-    ina_value Data = ( ina_value ) 0;
+float INA226_GetCurrent( struct INA226_Device* Device ) {
+    float Data = 0.0f;
 
-    Data = ( ina_value ) ( ( int16_t ) INA226_ReadReg16( Device, INA226_Reg_Current ) );
+    Data = ( float ) ( ( int16_t ) INA226_ReadReg16( Device, INA226_Reg_Current ) );
     Data = Data * Device->Current_LSB;
 
     return Data;
 }
 
-ina_value INA226_GetPower( struct INA226_Device* Device ) {
-    ina_value Data = ( ina_value ) 0;
+float INA226_GetPower( struct INA226_Device* Device ) {
+    float Data = 0.0f;
 
-    Data = ( ina_value ) ( ( int16_t ) INA226_ReadReg16( Device, INA226_Reg_Power ) );
+    Data = ( float ) ( ( int16_t ) INA226_ReadReg16( Device, INA226_Reg_Power ) );
     Data = Data * Device->Current_LSB;
 
-    return Data * ( ( ina_value ) 25 );
+    return Data * ( ( float ) 25 );
 }
 
 void INA226_Reset( struct INA226_Device* Device ) {
@@ -232,7 +223,6 @@ void INA226_Reset( struct INA226_Device* Device ) {
     INA226_WriteConfig( Device, INA226_ReadConfig( Device ) | INA226_CFG_Reset );
 }
 
-#ifdef CONFIG_INA226_USE_FP
 static void INA226_Calibrate_FP( struct INA226_Device* Device, int RShuntInMilliOhms, int MaxCurrentInAmps ) {
     float RShunt = ( ( float ) RShuntInMilliOhms ) / 1000.0f;
     float Current_LSB = 0.0f;
@@ -252,61 +242,10 @@ static void INA226_Calibrate_FP( struct INA226_Device* Device, int RShuntInMilli
 
     INA226_WriteReg( Device, INA226_Reg_Calibration, ( uint16_t ) Cal );
 }
-#else
-static void INA226_Calibrate_INT( struct INA226_Device* Device, int RShuntInMilliOhms, int MaxCurrentInAmps ) {
-    uint64_t InternalScaleValue = 0;
-    uint64_t Current_LSB = 0;
-    uint64_t Cal = 0;
-
-    /* Example input:
-     * RShuntInMilliOhms: 100 (0.1 ohms) - value of shunt resistor
-     * MaxCurrentInAmps: 4 - maximum (expected) current
-     * 
-     * Calibration:
-     * Current_LSB: Maximum current in amps / 2^15  (Current_LSB is microamps per bit?)
-     * Calibration: 0.00512 / ( Current_LSB * Value of shunt resistor )
-     */
-
-    /* Convert amps into microamps and divide it by our scale range (2^15) 
-     * This makes it a whole number and much easier to work with.
-     */
-    Current_LSB = ( ( MaxCurrentInAmps * 1000000 ) / 32768 ); // 122 uA/bit
-
-    /* This is the fixed internal value of 0.00512 multiplied by 100,000
-     * to make it a whole number.
-     */
-    InternalScaleValue = 512;
-
-    /* MYSTERY AHEAD
-     * BEWARE NON UNDERSTOOD MATH (by me)
-     */
-    Cal = Current_LSB * RShuntInMilliOhms;
-    Cal = ( InternalScaleValue * 10000 ) / Cal;     /* Where does 10,000 come from and why does it fit? */
-
-    Device->Current_LSB = ( int32_t ) Current_LSB;
-    Device->CalibrationValue = ( uint16_t ) Cal;
-
-    /* This is actually 1.25 millivolts but by multiplying by 100 we
-    * get rid of the fractional component and remove the need for
-    * floating point.
-    */
-    Device->BusVoltage_LSB = 125;
-
-    /* 2.5 Microvolts multiplied by 10 to remove the fractional component */
-    Device->ShuntVoltage_LSB = 25;
-
-    INA226_WriteReg( Device, INA226_Reg_Calibration, Device->CalibrationValue );
-}
-#endif
 
 void INA226_Calibrate( struct INA226_Device* Device, int RShuntInMilliOhms, int MaxCurrentInAmps ) {
     NullCheck( Device, return );
-
-#ifdef CONFIG_INA226_USE_FP
     INA226_Calibrate_FP( Device, RShuntInMilliOhms, MaxCurrentInAmps );
-#else
-    INA226_Calibrate_INT( Device, RShuntInMilliOhms, MaxCurrentInAmps );
-#endif    
 }
 
 bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMilliOhms, int MaxCurrentInAmps, INAWriteBytes WriteBytesFn, INAReadBytes ReadBytesFn ) {
@@ -333,14 +272,12 @@ bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMill
 
             return true;
         }
-
-        printf( "INA226: Failed to reset\n" );
     }
 
     return false;
 }
 
-static uint16_t INA226_SetAlertLimit( struct INA226_Device* Device, ina_value Value ) {
+static uint16_t INA226_SetAlertLimit( struct INA226_Device* Device, float Value ) {
     uint16_t Old = INA226_ReadReg16( Device, INA226_Reg_AlertLimit );
 
     NullCheck( Device, return 0 );
@@ -349,12 +286,12 @@ static uint16_t INA226_SetAlertLimit( struct INA226_Device* Device, ina_value Va
     return Old;
 }
 
-ina_value INA226_SetAlertLimit_BusVoltage( struct INA226_Device* Device, ina_value BusVoltageInMV ) {
-    ina_value OldLimit = ( ina_value ) 0;
+float INA226_SetAlertLimit_BusVoltage( struct INA226_Device* Device, float BusVoltageInMV ) {
+    float OldLimit = 0.0f;
 
-    NullCheck( Device, return ( ina_value ) 0 );
+    NullCheck( Device, return 0.0f );
 
-    OldLimit = ( ina_value ) INA226_SetAlertLimit( Device, BusVoltageInMV * Device->BusVoltage_LSB );
+    OldLimit = ( float ) INA226_SetAlertLimit( Device, BusVoltageInMV * Device->BusVoltage_LSB );
     OldLimit/= Device->BusVoltage_LSB;
 
     return OldLimit;
