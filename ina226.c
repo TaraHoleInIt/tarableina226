@@ -10,9 +10,13 @@
 #include <stdbool.h>
 #include <string.h>
 #include <math.h>
-#include <driver/i2c.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/semphr.h>
 
 #include "ina226.h"
+
+static SemaphoreHandle_t INALock = NULL;
 
 #define NullCheck( ptr, retexpr ) { \
     if ( ptr == NULL ) { \
@@ -29,10 +33,14 @@
 }
 
 static bool INA226_SetRegisterPointer( struct INA226_Device* Device, INA226_Reg Register ) {
+    uint8_t BReg = ( uint8_t ) Register;
+    bool Result = false;
+    
     NullCheck( Device, return false );
     NullCheck( Device->WriteBytesFn, return false );
 
-    return ( Device->WriteBytesFn( Device->Address, ( const uint8_t* ) &Register, 1 ) == 1 ) ? true : false;
+    Result = ( Device->WriteBytesFn( Device->Address, ( const uint8_t* ) &BReg, 1 ) == sizeof( uint8_t ) ) ? true : false;
+    return Result;
 }
 
 bool INA226_WriteReg( struct INA226_Device* Device, INA226_Reg Register, uint16_t Value ) {
@@ -41,11 +49,17 @@ bool INA226_WriteReg( struct INA226_Device* Device, INA226_Reg Register, uint16_
         Value >> 8,
         Value & 0xFF
     };
+    bool Result = false;
 
     NullCheck( Device, return false );
     NullCheck( Device->WriteBytesFn, return false );
 
-    return ( Device->WriteBytesFn( Device->Address, ( const uint8_t* ) Command, sizeof( Command ) ) == sizeof( Command ) ) ? true : false;
+    if ( xSemaphoreTake( INALock, portMAX_DELAY ) == pdTRUE ) {
+        Result = ( Device->WriteBytesFn( Device->Address, ( const uint8_t* ) Command, sizeof( Command ) ) == sizeof( Command ) ) ? true : false;
+        xSemaphoreGive( INALock );
+    }
+
+    return Result;
 }
 
 uint16_t INA226_ReadReg16( struct INA226_Device* Device, INA226_Reg Register ) {
@@ -55,13 +69,18 @@ uint16_t INA226_ReadReg16( struct INA226_Device* Device, INA226_Reg Register ) {
     NullCheck( Device->WriteBytesFn, return 0 );
     NullCheck( Device->ReadBytesFn, return 0 );
 
-    if ( INA226_SetRegisterPointer( Device, Register ) == true ) {
-        if ( Device->ReadBytesFn( Device->Address, ( uint8_t* ) &Value, sizeof( uint16_t ) ) == sizeof( uint16_t ) ) {
-            return ( Value >> 8 ) | ( Value << 8 );
+    if ( xSemaphoreTake( INALock, portMAX_DELAY ) == pdTRUE ) {
+        if ( INA226_SetRegisterPointer( Device, Register ) == true ) {
+            /* Other thread could interrupt right here and cause shit */
+            if ( Device->ReadBytesFn( Device->Address, ( uint8_t* ) &Value, sizeof( uint16_t ) ) != sizeof( uint16_t ) ) {
+                Value = 0;
+            }
         }
+
+        xSemaphoreGive( INALock );
     }
 
-    return 0;
+    return ( Value >> 8 ) | ( Value << 8 );
 }
 
 uint16_t INA226_GetManufacturerId( struct INA226_Device* Device ) {
@@ -209,13 +228,14 @@ float INA226_GetCurrent( struct INA226_Device* Device ) {
     return Data;
 }
 
+/* Returns the power flowing in microwatts */
 float INA226_GetPower( struct INA226_Device* Device ) {
     float Data = 0.0f;
 
-    Data = ( float ) ( ( int16_t ) INA226_ReadReg16( Device, INA226_Reg_Power ) );
-    Data = Data * Device->Current_LSB;
+    Data = ( float ) ( ( uint16_t ) INA226_ReadReg16( Device, INA226_Reg_Power ) );
+    Data = ( Data * ( Device->Current_LSB * 25.0f ) );
 
-    return Data * ( ( float ) 25 );
+    return Data;
 }
 
 void INA226_Reset( struct INA226_Device* Device ) {
@@ -258,6 +278,8 @@ bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMill
     memset( Device, 0, sizeof( struct INA226_Device ) );
 
     if ( I2CAddress > 0 ) {
+        INALock = xSemaphoreCreateMutex( );
+
         Device->WriteBytesFn = WriteBytesFn;
         Device->ReadBytesFn = ReadBytesFn;
         Device->Address = I2CAddress;
@@ -269,7 +291,6 @@ bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMill
          */
         if ( INA226_ReadConfig( Device ) == ConfigRegisterAfterReset ) {
             INA226_Calibrate( Device, RShuntInMilliOhms, MaxCurrentInAmps );
-
             return true;
         }
     }
@@ -277,11 +298,22 @@ bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMill
     return false;
 }
 
+INA226_Alert INA226_GetAlertMask( struct INA226_Device* Device ) {
+    return ( INA226_Alert ) INA226_ReadReg16( Device, INA226_Reg_AlertMask );
+}
+
+INA226_Alert INA226_SetAlertMask( struct INA226_Device* Device, INA226_Alert AlertMask ) {
+    INA226_Alert Old = INA226_GetAlertMask( Device );
+
+    INA226_WriteReg( Device, INA226_Reg_AlertMask, AlertMask );
+    return Old;
+}
+
 static uint16_t INA226_SetAlertLimit( struct INA226_Device* Device, float Value ) {
     uint16_t Old = INA226_ReadReg16( Device, INA226_Reg_AlertLimit );
 
     NullCheck( Device, return 0 );
-    INA226_WriteReg( Device, INA226_Reg_AlertLimit, Value );
+    INA226_WriteReg( Device, INA226_Reg_AlertLimit, ( uint16_t ) Value );
 
     return Old;
 }

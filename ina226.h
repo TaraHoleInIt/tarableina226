@@ -16,19 +16,6 @@ extern "C" {
 typedef size_t ( *INAWriteBytes ) ( int Address, const uint8_t* Buffer, size_t BytesToWrite );
 typedef size_t ( *INAReadBytes ) ( int Address, uint8_t* Buffer, size_t BufferMaxLen );
 
-struct INA226_Device {
-    float ShuntVoltage_LSB;
-    float BusVoltage_LSB;
-
-    float CalibrationValue;
-    float Current_LSB;
-
-    INAWriteBytes WriteBytesFn;
-    INAReadBytes ReadBytesFn;
-
-    int Address;
-};
-
 typedef enum {
     INA226_Reg_Cfg = 0x00,
     INA226_Reg_ShuntVoltage,
@@ -92,6 +79,19 @@ typedef enum {
     INA226_Alert_AlertLatchEnable = BIT( 0 )
 } INA226_Alert;
 
+struct INA226_Device {
+    float ShuntVoltage_LSB;
+    float BusVoltage_LSB;
+
+    float CalibrationValue;
+    float Current_LSB;
+
+    INAWriteBytes WriteBytesFn;
+    INAReadBytes ReadBytesFn;
+
+    int Address;
+};
+
 #define INA226_CFG_Reset BIT( 15 )
 
 #define INA226_CFG_AveragingMask ( BIT( 9 ) | BIT( 10 ) | BIT( 11 ) )
@@ -134,6 +134,9 @@ float INA226_GetPower( struct INA226_Device* Device );
 bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMilliOhms, int MaxCurrentInAmps, INAWriteBytes WriteBytesFn, INAReadBytes ReadBytesFn );
 void INA226_Reset( struct INA226_Device* Device );
 void INA226_Calibrate( struct INA226_Device* Device, int RShunt, int MaxCurrentInMilliamps );
+
+INA226_Alert INA226_GetAlertMask( struct INA226_Device* INADevice );
+INA226_Alert INA226_SetAlertMask( struct INA226_Device* INADevice, INA226_Alert AlertMask );
 
 float INA226_SetAlertLimit_BusVoltage( struct INA226_Device* Device, float BusVoltageInMV );
 
