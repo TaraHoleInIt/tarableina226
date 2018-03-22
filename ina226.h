@@ -13,8 +13,10 @@ extern "C" {
 #define BIT( n ) ( 1 << n )
 #endif
 
-typedef size_t ( *INAWriteBytes ) ( int Address, const uint8_t* Buffer, size_t BytesToWrite );
-typedef size_t ( *INAReadBytes ) ( int Address, uint8_t* Buffer, size_t BufferMaxLen );
+typedef size_t ( *INAWriteBytesProc ) ( int Address, const uint8_t* Buffer, size_t BytesToWrite );
+typedef size_t ( *INAReadBytesProc ) ( int Address, uint8_t* Buffer, size_t BufferMaxLen );
+typedef void ( *INAUnlockDeviceProc ) ( void );
+typedef bool ( *INALockDeviceProc ) ( void );
 
 typedef enum {
     INA226_Reg_Cfg = 0x00,
@@ -86,8 +88,11 @@ struct INA226_Device {
     float CalibrationValue;
     float Current_LSB;
 
-    INAWriteBytes WriteBytesFn;
-    INAReadBytes ReadBytesFn;
+    INAWriteBytesProc WriteBytes;
+    INAReadBytesProc ReadBytes;
+
+    INAUnlockDeviceProc Unlock;
+    INALockDeviceProc Lock;
 
     int Address;
 };
@@ -131,7 +136,7 @@ float INA226_GetBusVoltage( struct INA226_Device* Device );
 float INA226_GetCurrent( struct INA226_Device* Device );
 float INA226_GetPower( struct INA226_Device* Device );
 
-bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMilliOhms, int MaxCurrentInAmps, INAWriteBytes WriteBytesFn, INAReadBytes ReadBytesFn );
+bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMilliOhms, int MaxCurrentInAmps, INAWriteBytesProc WriteBytes, INAReadBytesProc ReadBytes, INALockDeviceProc Lock, INAUnlockDeviceProc Unlock );
 void INA226_Reset( struct INA226_Device* Device );
 void INA226_Calibrate( struct INA226_Device* Device, int RShunt, int MaxCurrentInMilliamps );
 

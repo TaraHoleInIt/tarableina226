@@ -8,15 +8,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <string.h>
-#include <math.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/semphr.h>
-
 #include "ina226.h"
-
-static SemaphoreHandle_t INALock = NULL;
 
 #define NullCheck( ptr, retexpr ) { \
     if ( ptr == NULL ) { \
@@ -33,14 +25,12 @@ static SemaphoreHandle_t INALock = NULL;
 }
 
 static bool INA226_SetRegisterPointer( struct INA226_Device* Device, INA226_Reg Register ) {
-    uint8_t BReg = ( uint8_t ) Register;
-    bool Result = false;
-    
     NullCheck( Device, return false );
-    NullCheck( Device->WriteBytesFn, return false );
+    NullCheck( Device->WriteBytes, return false );
+    NullCheck( Device->Unlock, return false );
+    NullCheck( Device->Lock, return false );
 
-    Result = ( Device->WriteBytesFn( Device->Address, ( const uint8_t* ) &BReg, 1 ) == sizeof( uint8_t ) ) ? true : false;
-    return Result;
+    return ( Device->WriteBytes( Device->Address, ( const uint8_t* ) &Register, 1 ) == sizeof( uint8_t ) ) ? true : false;
 }
 
 bool INA226_WriteReg( struct INA226_Device* Device, INA226_Reg Register, uint16_t Value ) {
@@ -52,11 +42,13 @@ bool INA226_WriteReg( struct INA226_Device* Device, INA226_Reg Register, uint16_
     bool Result = false;
 
     NullCheck( Device, return false );
-    NullCheck( Device->WriteBytesFn, return false );
+    NullCheck( Device->WriteBytes, return false );
+    NullCheck( Device->Unlock, return false );
+    NullCheck( Device->Lock, return false );
 
-    if ( xSemaphoreTake( INALock, portMAX_DELAY ) == pdTRUE ) {
-        Result = ( Device->WriteBytesFn( Device->Address, ( const uint8_t* ) Command, sizeof( Command ) ) == sizeof( Command ) ) ? true : false;
-        xSemaphoreGive( INALock );
+    if ( Device->Lock( ) == true ) {
+        Result = ( Device->WriteBytes( Device->Address, ( const uint8_t* ) Command, sizeof( Command ) ) == sizeof( Command ) ) ? true : false;
+        Device->Unlock( );
     }
 
     return Result;
@@ -66,18 +58,24 @@ uint16_t INA226_ReadReg16( struct INA226_Device* Device, INA226_Reg Register ) {
     uint16_t Value = 0;
 
     NullCheck( Device, return 0 );
-    NullCheck( Device->WriteBytesFn, return 0 );
-    NullCheck( Device->ReadBytesFn, return 0 );
+    NullCheck( Device->WriteBytes, return 0 );
+    NullCheck( Device->ReadBytes, return 0 );
+    NullCheck( Device->Unlock, return 0 );
+    NullCheck( Device->Lock, return 0 );
 
-    if ( xSemaphoreTake( INALock, portMAX_DELAY ) == pdTRUE ) {
+    if ( Device->Lock( ) == true ) {
         if ( INA226_SetRegisterPointer( Device, Register ) == true ) {
-            /* Other thread could interrupt right here and cause shit */
-            if ( Device->ReadBytesFn( Device->Address, ( uint8_t* ) &Value, sizeof( uint16_t ) ) != sizeof( uint16_t ) ) {
+            /* 
+             * Locks need to be implemented because it's possible for another thread to
+             * interrupt after another one has called SetRegisterPointer which will cause
+             * this one to return an unexpected value.
+             */
+            if ( Device->ReadBytes( Device->Address, ( uint8_t* ) &Value, sizeof( uint16_t ) ) != sizeof( uint16_t ) ) {
                 Value = 0;
             }
         }
 
-        xSemaphoreGive( INALock );
+        Device->Unlock( );
     }
 
     return ( Value >> 8 ) | ( Value << 8 );
@@ -243,7 +241,7 @@ void INA226_Reset( struct INA226_Device* Device ) {
     INA226_WriteConfig( Device, INA226_ReadConfig( Device ) | INA226_CFG_Reset );
 }
 
-static void INA226_Calibrate_FP( struct INA226_Device* Device, int RShuntInMilliOhms, int MaxCurrentInAmps ) {
+void INA226_Calibrate( struct INA226_Device* Device, int RShuntInMilliOhms, int MaxCurrentInAmps ) {
     float RShunt = ( ( float ) RShuntInMilliOhms ) / 1000.0f;
     float Current_LSB = 0.0f;
     float Cal = 0.0f;
@@ -263,26 +261,30 @@ static void INA226_Calibrate_FP( struct INA226_Device* Device, int RShuntInMilli
     INA226_WriteReg( Device, INA226_Reg_Calibration, ( uint16_t ) Cal );
 }
 
-void INA226_Calibrate( struct INA226_Device* Device, int RShuntInMilliOhms, int MaxCurrentInAmps ) {
-    NullCheck( Device, return );
-    INA226_Calibrate_FP( Device, RShuntInMilliOhms, MaxCurrentInAmps );
-}
-
-bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMilliOhms, int MaxCurrentInAmps, INAWriteBytes WriteBytesFn, INAReadBytes ReadBytesFn ) {
+bool INA226_Init( struct INA226_Device* Device, int I2CAddress, int RShuntInMilliOhms, int MaxCurrentInAmps, INAWriteBytesProc WriteBytes, INAReadBytesProc ReadBytes, INALockDeviceProc Lock, INAUnlockDeviceProc Unlock ) {
     const uint16_t ConfigRegisterAfterReset = 0x4127;
 
-    NullCheck( WriteBytesFn, return false );
-    NullCheck( ReadBytesFn, return false );
+    NullCheck( WriteBytes, return false );
+    NullCheck( ReadBytes, return false );
+    NullCheck( Unlock, return false );
+    NullCheck( Lock, return false );
     NullCheck( Device, return false );
     
-    memset( Device, 0, sizeof( struct INA226_Device ) );
+    Device->ShuntVoltage_LSB = 0.0f;
+    Device->BusVoltage_LSB = 0.0f;
+    Device->CalibrationValue = 0.0f;
+    Device->Current_LSB = 0.0f;
+    Device->WriteBytes = NULL;
+    Device->ReadBytes = NULL;
+    Device->Unlock = NULL;
+    Device->Lock = NULL;
 
     if ( I2CAddress > 0 ) {
-        INALock = xSemaphoreCreateMutex( );
-
-        Device->WriteBytesFn = WriteBytesFn;
-        Device->ReadBytesFn = ReadBytesFn;
+        Device->WriteBytes = WriteBytes;
+        Device->ReadBytes = ReadBytes;
         Device->Address = I2CAddress;
+        Device->Unlock = Unlock;
+        Device->Lock = Lock;
 
         INA226_Reset( Device );
 
